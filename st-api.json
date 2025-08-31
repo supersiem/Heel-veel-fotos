@@ -2,11 +2,11 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Somtoday Connect - Generiek Koppelvlak",
-    "version": "14.10.0",
+    "version": "15.5.0",
     "license": {
       "name": "Connect Api"
     },
-    "description": "Dit is de OpenAPI specificatie van het Somtoday Connect Koppelvlak. \n\nChangelog\n--------------\n- [Nightly](https://connect.nightly.somtoday.build/changelog)\n- [Acceptatie](https://connect.acceptatie.somtoday.nl/changelog)\n- [Test](https://connect.test.somtoday.nl/changelog)\n- [Productie](https://connect.somtoday.nl/changelog)\n\nAlgemene opzet\n--------------\n\nHet doel van het Somtoday Koppelvlak is om als generiek aansluitpunt voor zo veel mogelijk koppelpartijen van Somtoday te kunnen dienen, en de school de handvatten te bieden de koppelingen in te richten in overeenkomst met de privacywetgeving. De school kan, na het activeren van een koppeling, restricties leggen op welke leerlingen (zie Breedtepermissies) en welke velden (zie Veldpermissies) gedeeld worden met de koppelpartij. Op deze manier ontvangt de koppelpartij enkel de data die relevant is.\n\nIn Somtoday worden scholen in organisatorisch opzicht in twee niveaus opgesplitst. \nHet hoogste organisatorische lichaam is de Instelling, ook wel organisatie genoemd. Dit is eigenlijk het overkoepelende bestuursorgaan van de school.\n\nHieronder vallen de Vestigingen, waar les gegeven wordt.    \n\nOmgevingen\n----------\n\nHet Somtoday OATP landschap kent vier niveaus: nightly, acceptatie, test en productie.\n\nDe nightly-omgeving is alleen voor intern gebruik. Acceptatie bevat demodata en is geschikt voor de eerste fase van koppelen. Test is een kopieslag van productie en kan gebruikt worden voor een test met een gezamenlijke klant van Somtoday en koppelpartner. \n\nAanroepen koppelvlak\n--------------------\n\nHet Connect koppelvlak werkt op basis van de OAuth 2 Client Credentials flow. (Zie bijvoorbeeld: https://auth0.com/docs/authorization/flows/client-credentials-flow) \n\nVoordat een koppelpartij het Somtoday Connect Koppelvlak kan aanspreken moet er een OAuth Client voor deze koppelpartij worden ingericht. Deze Client geeft algemene toegang tot het koppelvlak. Data van scholen kan pas opgehaald worden nadat de school dit heeft ingericht. Dit wordt op Vestigingsniveau ingericht, wat inhoudt dat rechten van een koppelpartij per vestiging kunnen verschillen, en data per vestiging opgehaald dient te worden.\n\nOm het Somtoday Connect Koppelvlak aan te roepen moet men de volgende vier stappen doorlopen.\n\n1. Organisatie UUID. Let op: deze identifier moet NIET door de eindgebruiker aangeleverd worden (om te voorkomen dat data van school x door school y uitgelezen wordt).\nDeze UUID kan op twee manieren achterhaald worden, namelijk door de koppelpartij zelf, handmatig te achterhalen \nvia ```https://api.somtoday.nl/rest/v1/connect/instelling``` (voorbeeld productieomgeving). Op basis van naam of brinnummer kan gezocht worden naar de juiste organisatie, welke gevalideerd door een medewerker van de koppelpartij aan de juist organisatie binnen de koppelpartij gelinkt kan worden. Daarnaast kan het geautomatiseerd aangeleverd worden door een SSO authenticatie naar Somtoday te starten. Zie onderstaande documentatie.\n\n2. OAuth token aanvragen via een POST request naar ```https://somtoday.nl/oauth2/token?organisation={organisation_uuid}``` (voorbeeld productieomgeving) met als organisation query parameter het UUID van de organisatie waarvoor de koppelpartij een request wil doen. Dit token is uniek per organisatie en dient in verdere requests meegestuurd te worden in een Authorization header als bearer token.\n\n3. Vestigings UUID achterhalen met een request naar ```https://api.somtoday.nl/rest/v1/connect/vestiging``` (voorbeeld productieomgeving), om alle Vestigingen op te vragen waar de koppelpartij op dat moment data mag opvragen.\n\n4. Aanroepen gewenste endpoint aan de hand van het Vestigings UUID (alleen het Instelling- en Vestigingendpoint zijn niet aan een specifieke vestiging gebonden). \nEen request om alle Leerlingen van de Vestiging op te halen zal bijvoorbeeld een GET request naar het volgende endpoint zijn ```https://api.somtoday.nl/rest/v1/connect/vestiging/{vestiging_uuid}/leerling?amount=100```\n\n\nOrganisatie UUID valideren via SSO (OAuth2 Authorisation Code Flow met OpenID Connect extensie)\n-----------------------------------------------------------------------------------------------\n\nDoordat de koppeling Somtoday - Koppelpartij een server to server koppeling is, zonder dat hier een eindgebruiker aan te pas komt, \nkan er omdat Somtoday een organisatie UUID vereist, een organisatie synchronisatie probleem (data school x beschikbaar op school y) ontstaan. Het is immers niet bekend welke \norganisatie UUID bij elke omgeving van de koppelpartij hoort. Wanneer een gebruiker ingelogd is in het systeem van de koppelpartij\n(en deze gebruiker heeft de rechten de Somtoday Connect koppeling in te richten voor die school), kan er een Single Sign On call naar\nSomtoday worden gedaan. Hieronder een stappenplan (tip: gebruik een oauth2 + oidc library om de flows te implementeren):\n\n1. Gebruiker benadert de applicatie van de koppelpartner.\n2. In zijn (organisatie) omgeving klikt de gebruiker op knop (bijvoorbeeld: \"koppel een Somtoday omgeving\"), waarna een OAuth2\nauthorization code flow door naar het authorization endpoint te redirecten (met scope openid). Stuur ook een claimrequest 'affiliation' mee om te \nkunnen valideren of het een docent (en geen leerling!) is die inlogt. (voorbeeld queryparameter: `claims=%7B%22id_token%22%3A%7B%22vestigingen%22%3Anull%2C%22affiliation%22%3Anull%2C%22uuid%22%3Anull%7D%7D`)\n3. Wanneer de gebruiker bij Somtoday geen sessie heeft, komt hij/zij uit op https://inloggen.somtoday.nl \n4. Somtoday vraagt gebruiker om zijn/haar gebruikersnaam en wachtwoord (of gebruiker logt in via alternatieve provider zoals Google of Microsoft).\n5. Somtoday heeft geconstateerd dat de gebruikersnaam en wachtwoord kloppen en geeft gebruiker een authorisatiecode en de geregistreerde redirect_uri van de koppelpartij.\n6. Somtoday redirect de gebruiker naar de redirect_uri van de applicatie met authorisatiecode als queryparameter in URL.\n7. Applicatie gebruikt authorisatiecode en de geregistreerde client_id en secret (dezelfde als in communicatie met deze api wordt gebruikt)  om het token exchange endpoint te benaderen en een id_token op te vragen.\n8. Somtoday controleert de authorisatiecode en de client_id en secret en geeft een id_token (en een access- en refreshtoken) uit.\n9. Applicatie gebruikt id_token om identiteit van ingelogde gebruiker vast te stellen op basis van de OpenID configuration van Somtoday. De authenticiteit van de data wordt hiermee gevalideerd.\n10. In de claimset uit het id_token kan men de organisatie uuid extracten en de affiliation valideren (kan bevatten: “employee”, “student”, “parent/guardian”). Het 'subject' field bevat: OrganisationUUID/AccountUUID.\n\nDit klinkt als een complex stappenplan, maar wanneer er een oauth2 oidc library wordt ingezet, komt het vooral neer op:\n\n1. Redirect naar Somtoday.\n2. Haal het id_token op en laat de library de validatie doen.\n3. Extract organisatie uuid.\n\nMeer informatie over OAuth2.0 en OpenID Connect (OIDC): https://oauth.net/2/\n\nVormgeving van de responses\n---------------------------\n\nHet Somtoday Connect Koppelvlak levert alle gevraagde data in JSON format uit.\nAlle uitgeleverde data wordt verpakt in Response objecten en het type van het Response object is afhankelijk van de inhoud (LeerlingResponse, MedewerkerResponse, LesgroepResponse, enz.)\n\n\nBij de JSON objecten die in het Response object zitten kunnen de volgende kanttekeningen worden geplaatst:\n- Wanneer de waarde van een veld in Somtoday null is, wordt dat veld niet aan de JSON toegevoegd.\n- Wanneer de koppelpartij geen permissies heeft voor een bepaald veld, wordt dat veld niet aan de JSON toegevoegd.\n- Wanneer de waarde van een veld in Somtoday een lege lijst is, zal de waarde van het veld in de JSON response een lege array zijn.\nKoppelpartijen doen er dus goed aan rekening ermee te houden dat de JSON die zij als response krijgen 'onvolledig' zou kunnen zijn.\n\nBreedtepermissies\n-----------------\n\nZoals aangegeven kan een school inrichten welke gegevens aan een bepaalde koppelpartij worden uitgeleverd door het Somtoday Connect Koppelvlak.\nIn dit opzicht wordt gesproken van breedtepermissies wanneer men spreekt van het beperken van de data zodat alleen gegevens die betrekking hebben op een subset van de Leerlingen wordt uitgeleverd.\n\nDit kan tot uiting komen in dat een koppelpartij bij een bepaalde school bijvoorbeeld alleen de Lesgroepen kan ophalen die aan bepaalde vakken gekoppeld zijn.\nIn die situatie kan diezelfde koppelpartij bij diezelfde school ook alleen de Leerlingen ophalen die in die Lesgroepen zitten, en ook alleen de Medewerkers ophalen die Docent zijn van die Lesgroepen.\n\n\nVeldpermissies\n----------------\n\nDe andere dimensie waarin scholen de uitgeleverde data kunnen beperken is door bepaalde velden niet mee te laten leveren.\nDe koppelpartij geeft bij Somtoday aan welke velden verplicht zijn en daarnaast welke velden optioneel zijn. Wanneer een school een koppeling met de koppelpartij open zet, worden de verplichte velden standaard meegegeven en de optionele velden alleen wanneer de school hier toestemming voor geeft. \nDe koppelpartij kan de veldpermissies opvragen door gebruik te maken van de veldpermissies query parameter, bijvoorbeeld met ```https://api.somtoday.nl/rest/v1/connect/vestiging/{vestiging_uuid}/lesgroep/{lesgroep_uuid}?veldpermissies=true```. \nMerk op dat de veldpermissies altijd gelden voor één specifieke Koppelpartij voor één specifieke Vestiging voor één specifiek entiteittype.\nDe veldpermissies voor de ene Leerling van een Vestiging zullen voor dezelfde Koppelpartij dus precies hetzelfde zijn als de veldpermissies voor een andere Leerling van diezelfde Vestiging. \nWanneer een koppelpartij geen permissie heeft voor bepaalde velden, worden die velden niet meegeleverd in de uiteindelijke response body. \nTijdens de aansluitfase zorgt Somtoday ervoor dat de koppelpartij, ter demonstratie, toegang heeft tot minstens twee vestigingen met demodata, waarvan bij één vestiging enkele velden niet geautoriseerd zijn. \n\n\nDe peilschooljaar parameter\n---------------------------\n\n\nHet Somtoday Connect Koppelvlak geeft standaard alleen de data terug die op het moment van het request actueel is.    \nMet de peilschooljaar parameter kan ook data opgehaald worden die nu nog niet actueel is. Met waarde HUIDIG worden ook aanstaande wijzigingen binnen het huidige schooljaar meegegeven. Met waarde VOLGEND wordt data van het volgende schooljaar meegegeven.         \nHet is niet mogelijk om historische informatie op te vragen uit het Somtoday Connect Koppelvlak.\n\nEvents endpoint\n---------------\nLet op: dit endpoint is nog niet geïmplementeerd.\n\nSommige koppelpartijen willen graag zorgen dat hun data up-to-date is met die van Somtoday. \nOmdat het voor zowel Somtoday, vanwege de load op het systeem, als voor de Koppelpartij zelf, vanwege de doorlooptijd en bewerkelijkheid van zo'n proces, onwenselijk is om periodiek alle data uit het Somtoday Connect Koppelvlak op te vragen hebben we een events endpoint gerealiseerd.\nWanneer een entiteit in het Koppelvlak wijzigt zal op dit endpoint een nieuwe Event verschijnen.\nIn een Event staat het UUID van de gewijzigde entiteit en de URL waar deze kan worden opgehaald, alsmede een tijdstip waarop de wijziging geregistreerd is en een indexnummer.\nKoppelpartijen kunnen deze Events gebruiken om alleen de gewijzigde data uit het Somtoday Connect Koppelvlak op te halen.\nHet indexnummer kan gebruikt worden om oudere Events, die de Koppelpartij al een keer ontvangen heeft, over te slaan.\nKoppelpartijen kunnen Events ook filteren op specifieke entiteiten wanneer ze bijvoorbeeld geen interesse hebben in andere entiteiten of wanneer het voor hun eigen proces beter uitkomt om één entiteittype tegelijk te updaten.\nEvents worden uitgeleverd in de volgorde waarin ze zijn geregistreerd.\n\n\nVerdere aanbevelingen\n---------------------\n\nVoor het genereren van een Client stub of API files op basis van deze openapi spec yaml verwijzen we naar de Openapi Generator:\n\nhttps://openapi-generator.tech/\n\nWij hebben zelf erg goede ervaringen met deze tool.\n\nTer afsluiting\n--------------\n\nWij proberen met de documentatie die beschikbaar is in deze OpenAPI spec yaml zo veel mogelijk vragen bij Koppelpartijen weg te nemen.\nMochten er desondanks onduidelijkheden bestaan over de werking van het Somtoday Connect Koppelvlak dan horen wij die graag.\nNiet alleen beantwoorden wij ze graag maar door jullie vragen kunnen wij ook onze documentatie verbeteren, om toekomstige Koppelpartijen nog beter van dienst te zijn :)\n"
+    "description": "Dit is de OpenAPI specificatie van het Somtoday Connect Koppelvlak. \n\nChangelog\n--------------\n- [Nightly](https://connect.nightly.somtoday.build/changelog)\n- [Acceptatie](https://connect.acceptatie.somtoday.nl/changelog)\n- [Test](https://connect.test.somtoday.nl/changelog)\n- [Productie](https://connect.somtoday.nl/changelog)\n\nAlgemene opzet\n--------------\n\nHet doel van het Somtoday Koppelvlak is om als generiek aansluitpunt voor zo veel mogelijk koppelpartijen van Somtoday te kunnen dienen, en de school de handvatten te bieden de koppelingen in te richten in overeenkomst met de privacywetgeving. De school kan, na het activeren van een koppeling, restricties leggen op welke leerlingen (zie Breedtepermissies) en welke velden (zie Veldpermissies) gedeeld worden met de koppelpartij. Op deze manier ontvangt de koppelpartij enkel de data die relevant is.\n\nIn Somtoday worden scholen in organisatorisch opzicht in twee niveaus opgesplitst. \nHet hoogste organisatorische lichaam is de Instelling, ook wel organisatie genoemd. Dit is eigenlijk het overkoepelende bestuursorgaan van de school.\n\nHieronder vallen de Vestigingen, waar les gegeven wordt.    \n\nOmgevingen\n----------\n\nHet Somtoday OATP landschap kent vier niveaus: nightly, acceptatie, test en productie.\n\nDe nightly-omgeving is alleen voor intern gebruik. Acceptatie bevat demodata en is geschikt voor de eerste fase van koppelen. Test is een kopieslag van productie en kan gebruikt worden voor een test met een gezamenlijke klant van Somtoday en koppelpartner. \n\nAanroepen koppelvlak\n--------------------\n\nHet Connect koppelvlak werkt op basis van de OAuth 2 Client Credentials flow. (Zie bijvoorbeeld: https://auth0.com/docs/authorization/flows/client-credentials-flow) \n\nVoordat een koppelpartij het Somtoday Connect Koppelvlak kan aanspreken moet er een OAuth Client voor deze koppelpartij worden ingericht. Deze Client geeft algemene toegang tot het koppelvlak. Data van scholen kan pas opgehaald worden nadat de school dit heeft ingericht. Dit wordt op Vestigingsniveau ingericht, wat inhoudt dat rechten van een koppelpartij per vestiging kunnen verschillen, en data per vestiging opgehaald dient te worden.\n\nOm het Somtoday Connect Koppelvlak aan te roepen moet men de volgende vier stappen doorlopen.\n\n1. Organisatie UUID. Let op: deze identifier moet NIET door de eindgebruiker aangeleverd worden (om te voorkomen dat data van school x door school y uitgelezen wordt).\nDeze UUID kan op twee manieren achterhaald worden, namelijk door de koppelpartij zelf, handmatig te achterhalen \nvia ```https://api.somtoday.nl/rest/v1/connect/instelling``` (voorbeeld productieomgeving). Op basis van naam of brinnummer kan gezocht worden naar de juiste organisatie, welke gevalideerd door een medewerker van de koppelpartij aan de juist organisatie binnen de koppelpartij gelinkt kan worden. Daarnaast kan het geautomatiseerd aangeleverd worden door een SSO authenticatie naar Somtoday te starten. Zie onderstaande documentatie.\n\n2. OAuth token aanvragen via een POST request naar ```https://somtoday.nl/oauth2/token?organisation={organisation_uuid}``` (voorbeeld productieomgeving) met als organisation query parameter het UUID van de organisatie waarvoor de koppelpartij een request wil doen. Dit token is uniek per organisatie en dient in verdere requests meegestuurd te worden in een Authorization header als bearer token.\n\n3. Vestigings UUID achterhalen met een request naar ```https://api.somtoday.nl/rest/v1/connect/vestiging``` (voorbeeld productieomgeving), om alle Vestigingen op te vragen waar de koppelpartij op dat moment data mag opvragen.\n\n4. Aanroepen gewenste endpoint aan de hand van het Vestigings UUID (alleen het Instelling- en Vestigingendpoint zijn niet aan een specifieke vestiging gebonden). \nEen request om alle Leerlingen van de Vestiging op te halen zal bijvoorbeeld een GET request naar het volgende endpoint zijn ```https://api.somtoday.nl/rest/v1/connect/vestiging/{vestiging_uuid}/leerling?amount=100```\n\n\nOrganisatie UUID valideren via SSO (OAuth2 Authorisation Code Flow met OpenID Connect extensie)\n-----------------------------------------------------------------------------------------------\n\nDoordat de koppeling Somtoday - Koppelpartij een server to server koppeling is, zonder dat hier een eindgebruiker aan te pas komt, \nkan er omdat Somtoday een organisatie UUID vereist, een organisatie synchronisatie probleem (data school x beschikbaar op school y) ontstaan. Het is immers niet bekend welke \norganisatie UUID bij elke omgeving van de koppelpartij hoort. Wanneer een gebruiker ingelogd is in het systeem van de koppelpartij\n(en deze gebruiker heeft de rechten de Somtoday Connect koppeling in te richten voor die school), kan er een Single Sign On call naar\nSomtoday worden gedaan. Hieronder een stappenplan (tip: gebruik een oauth2 + oidc library om de flows te implementeren):\n\n1. Gebruiker benadert de applicatie van de koppelpartner.\n2. In zijn (organisatie) omgeving klikt de gebruiker op knop (bijvoorbeeld: \"koppel een Somtoday omgeving\"), waarna een OAuth2\nauthorization code flow door naar het authorization endpoint te redirecten (met scope openid). Stuur ook een claimrequest 'affiliation' mee om te \nkunnen valideren of het een docent (en geen leerling!) is die inlogt. (voorbeeld queryparameter: `claims=%7B%22id_token%22%3A%7B%22vestigingen%22%3Anull%2C%22affiliation%22%3Anull%2C%22uuid%22%3Anull%7D%7D`)\n3. Wanneer de gebruiker bij Somtoday geen sessie heeft, komt hij/zij uit op https://inloggen.somtoday.nl \n4. Somtoday vraagt gebruiker om zijn/haar gebruikersnaam en wachtwoord (of gebruiker logt in via alternatieve provider zoals Google of Microsoft).\n5. Somtoday heeft geconstateerd dat de gebruikersnaam en wachtwoord kloppen en geeft gebruiker een authorisatiecode en de geregistreerde redirect_uri van de koppelpartij.\n6. Somtoday redirect de gebruiker naar de redirect_uri van de applicatie met authorisatiecode als queryparameter in URL.\n7. Applicatie gebruikt authorisatiecode en de geregistreerde client_id en secret (dezelfde als in communicatie met deze api wordt gebruikt)  om het token exchange endpoint te benaderen en een id_token op te vragen.\n8. Somtoday controleert de authorisatiecode en de client_id en secret en geeft een id_token (en een access- en refreshtoken) uit.\n9. Applicatie gebruikt id_token om identiteit van ingelogde gebruiker vast te stellen op basis van de OpenID configuration van Somtoday. De authenticiteit van de data wordt hiermee gevalideerd.\n10. In de claimset uit het id_token kan men de organisatie uuid extracten en de affiliation valideren (kan bevatten: “employee”, “student”, “parent/guardian”). Het 'subject' field bevat: OrganisationUUID/AccountUUID.\n\nDit klinkt als een complex stappenplan, maar wanneer er een oauth2 oidc library wordt ingezet, komt het vooral neer op:\n\n1. Redirect naar Somtoday.\n2. Haal het id_token op en laat de library de validatie doen.\n3. Extract organisatie uuid.\n\nMeer informatie over OAuth2.0 en OpenID Connect (OIDC): https://oauth.net/2/\n\nVormgeving van de responses\n---------------------------\n\nHet Somtoday Connect Koppelvlak levert alle gevraagde data in JSON format uit.\nAlle uitgeleverde data wordt verpakt in Response objecten en het type van het Response object is afhankelijk van de inhoud (LeerlingResponse, MedewerkerResponse, LesgroepResponse, enz.)\n\n\nBij de JSON objecten die in het Response object zitten kunnen de volgende kanttekeningen worden geplaatst:\n- Wanneer de waarde van een veld in Somtoday null is, wordt dat veld niet aan de JSON toegevoegd.\n- Wanneer de koppelpartij geen permissies heeft voor een bepaald veld, wordt dat veld niet aan de JSON toegevoegd.\n- Wanneer de waarde van een veld in Somtoday een lege lijst is, zal de waarde van het veld in de JSON response een lege array zijn.\nKoppelpartijen doen er dus goed aan rekening ermee te houden dat de JSON die zij als response krijgen 'onvolledig' zou kunnen zijn.\n\nBreedtepermissies\n-----------------\n\nZoals aangegeven kan een school inrichten welke gegevens aan een bepaalde koppelpartij worden uitgeleverd door het Somtoday Connect Koppelvlak.\nIn dit opzicht wordt gesproken van breedtepermissies wanneer men spreekt van het beperken van de data zodat alleen gegevens die betrekking hebben op een subset van de Leerlingen wordt uitgeleverd.\n\nDit kan tot uiting komen in dat een koppelpartij bij een bepaalde school bijvoorbeeld alleen de Lesgroepen kan ophalen die aan bepaalde vakken gekoppeld zijn.\nIn die situatie kan diezelfde koppelpartij bij diezelfde school ook alleen de Leerlingen ophalen die in die Lesgroepen zitten, en ook alleen de Medewerkers ophalen die Docent zijn van die Lesgroepen.\n\n\nVeldpermissies\n----------------\n\nDe andere dimensie waarin scholen de uitgeleverde data kunnen beperken is door bepaalde velden niet mee te laten leveren.\nDe koppelpartij geeft bij Somtoday aan welke velden verplicht zijn en daarnaast welke velden optioneel zijn. Wanneer een school een koppeling met de koppelpartij open zet, worden de verplichte velden standaard meegegeven en de optionele velden alleen wanneer de school hier toestemming voor geeft. \nDe koppelpartij kan de veldpermissies opvragen door gebruik te maken van de veldpermissies query parameter, bijvoorbeeld met ```https://api.somtoday.nl/rest/v1/connect/vestiging/{vestiging_uuid}/lesgroep/{lesgroep_uuid}?veldpermissies=true```. \nMerk op dat de veldpermissies altijd gelden voor één specifieke Koppelpartij voor één specifieke Vestiging voor één specifiek entiteittype.\nDe veldpermissies voor de ene Leerling van een Vestiging zullen voor dezelfde Koppelpartij dus precies hetzelfde zijn als de veldpermissies voor een andere Leerling van diezelfde Vestiging. \nWanneer een koppelpartij geen permissie heeft voor bepaalde velden, worden die velden niet meegeleverd in de uiteindelijke response body. \nTijdens de aansluitfase zorgt Somtoday ervoor dat de koppelpartij, ter demonstratie, toegang heeft tot minstens twee vestigingen met demodata, waarvan bij één vestiging enkele velden niet geautoriseerd zijn. \n\n\nDe peilschooljaar parameter\n---------------------------\n\nHet Somtoday Connect Koppelvlak geeft standaard alleen de data terug die op het moment van het request actueel is.    \nMet de peilschooljaar parameter kan ook data opgehaald worden die nu nog niet actueel is. Met waarde HUIDIG worden ook aanstaande wijzigingen binnen het huidige schooljaar meegegeven. Met waarde VOLGEND wordt data van het volgende schooljaar meegegeven, en met waarde VORIG word data van het vorig schooljaar meegegeven.\n\nEvents endpoint\n---------------\nLet op: dit endpoint is nog niet geïmplementeerd.\n\nSommige koppelpartijen willen graag zorgen dat hun data up-to-date is met die van Somtoday. \nOmdat het voor zowel Somtoday, vanwege de load op het systeem, als voor de Koppelpartij zelf, vanwege de doorlooptijd en bewerkelijkheid van zo'n proces, onwenselijk is om periodiek alle data uit het Somtoday Connect Koppelvlak op te vragen hebben we een events endpoint gerealiseerd.\nWanneer een entiteit in het Koppelvlak wijzigt zal op dit endpoint een nieuwe Event verschijnen.\nIn een Event staat het UUID van de gewijzigde entiteit en de URL waar deze kan worden opgehaald, alsmede een tijdstip waarop de wijziging geregistreerd is en een indexnummer.\nKoppelpartijen kunnen deze Events gebruiken om alleen de gewijzigde data uit het Somtoday Connect Koppelvlak op te halen.\nHet indexnummer kan gebruikt worden om oudere Events, die de Koppelpartij al een keer ontvangen heeft, over te slaan.\nKoppelpartijen kunnen Events ook filteren op specifieke entiteiten wanneer ze bijvoorbeeld geen interesse hebben in andere entiteiten of wanneer het voor hun eigen proces beter uitkomt om één entiteittype tegelijk te updaten.\nEvents worden uitgeleverd in de volgorde waarin ze zijn geregistreerd.\n\n\nVerdere aanbevelingen\n---------------------\n\nVoor het genereren van een Client stub of API files op basis van deze openapi spec yaml verwijzen we naar de Openapi Generator:\n\nhttps://openapi-generator.tech/\n\nWij hebben zelf erg goede ervaringen met deze tool.\n\nTer afsluiting\n--------------\n\nWij proberen met de documentatie die beschikbaar is in deze OpenAPI spec yaml zo veel mogelijk vragen bij Koppelpartijen weg te nemen.\nMochten er desondanks onduidelijkheden bestaan over de werking van het Somtoday Connect Koppelvlak dan horen wij die graag.\nNiet alleen beantwoorden wij ze graag maar door jullie vragen kunnen wij ook onze documentatie verbeteren, om toekomstige Koppelpartijen nog beter van dienst te zijn :)\n"
   },
   "servers": [
     {
@@ -270,6 +270,9 @@
           "stamgroep": {
             "type": "boolean"
           },
+          "bekostigingsvestigingscode": {
+            "type": "boolean"
+          },
           "mentor_plaatsing": {
             "type": "boolean"
           },
@@ -331,6 +334,9 @@
             "type": "boolean"
           },
           "roepnaam": {
+            "type": "boolean"
+          },
+          "geboortenaam": {
             "type": "boolean"
           },
           "voorletters": {
@@ -401,6 +407,78 @@
           },
           "redenUitDienst": {
             "type": "boolean"
+          },
+          "is_onderwijzend_personeel": {
+            "type": "boolean"
+          },
+          "is_ondersteunend_personeel": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Agenda": {
+        "type": "object",
+        "properties": {
+          "afspraken": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MedewerkerAfspraak"
+            }
+          }
+        }
+      },
+      "MedewerkerAfspraak": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "titel": {
+            "type": "string",
+            "description": "max 100 chars."
+          },
+          "vak": {
+            "$ref": "#/components/schemas/VakReferentie"
+          },
+          "omschrijving": {
+            "type": "string",
+            "description": "Rich Text, geen limiet op lengte."
+          },
+          "afspraaktype": {
+            "type": "string",
+            "description": "max 30 chars."
+          },
+          "begintijd": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "eindtijd": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "locatie": {
+            "type": "string",
+            "description": "omschrijving van waar de afspraak plaatsvindt. Bijvoorbeeld 'Vestiging Veldmuisweg - Lokaal 3.14' Max 100 chars."
+          },
+          "lesuren": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "een array van de lesuren waar deze afpraak onder valt. Niet iedere school gebruikt lesuren."
+          },
+          "externId": {
+            "type": "string",
+            "description": "id van de afspraak zoals het bekend is bij externe systemen zoals roosterpakketten. Max. 500 chars. Kan leeg zijn."
+          },
+          "leerlingen": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "lijst met uuids van leerlingen die aan deze afspraak deelnemen"
           }
         }
       },
@@ -460,6 +538,9 @@
             "type": "boolean"
           },
           "vestiging": {
+            "type": "boolean"
+          },
+          "omschrijving": {
             "type": "boolean"
           }
         }
@@ -1129,6 +1210,89 @@
           }
         }
       },
+      "KluisafnameResponse": {
+        "type": "object",
+        "description": "Response object voor endpoint waarop de Kluisafnames van een leerling worden uitgeleverd",
+        "properties": {
+          "kluisafnames": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Kluisafname"
+            }
+          },
+          "veldpermissies": {
+            "$ref": "#/components/schemas/KluisafnamePermissies"
+          }
+        }
+      },
+      "KluisafnamePermissies": {
+        "type": "object",
+        "description": "Object dat beschrijft voor welke velden van een kluisafname van de leerling de Koppelpartij recht heeft.",
+        "properties": {
+          "leerling_uuid": {
+            "type": "boolean"
+          },
+          "kluisnummer": {
+            "type": "boolean"
+          },
+          "sleutelnummer": {
+            "type": "boolean"
+          },
+          "borg": {
+            "type": "boolean"
+          },
+          "borg_betaald": {
+            "type": "boolean"
+          },
+          "van": {
+            "type": "boolean"
+          },
+          "tot": {
+            "type": "boolean"
+          },
+          "datum_sleutel_ingeleverd": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Kluisafname": {
+        "type": "object",
+        "description": "Object dat een kluisafname van de leerling de Koppelpartij beschrijft.",
+        "properties": {
+          "leerling_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kluisnummer": {
+            "type": "string",
+            "example": "2B3389"
+          },
+          "sleutelnummer": {
+            "type": "string",
+            "example": "55K4431"
+          },
+          "borg": {
+            "type": "number",
+            "description": "Bedrag (getal met 2 decimalen achter de komma)",
+            "example": "15,68"
+          },
+          "borg_betaald": {
+            "type": "boolean"
+          },
+          "van": {
+            "type": "string",
+            "format": "date"
+          },
+          "tot": {
+            "type": "string",
+            "format": "date"
+          },
+          "datum_sleutel_ingeleverd": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
       "Instelling": {
         "type": "object",
         "properties": {
@@ -1196,6 +1360,82 @@
           }
         }
       },
+      "ToegangspasResponse": {
+        "type": "object",
+        "description": "Response object voor endpoint waarop de Toegangspas(sen) van Leerlingen en/of Medewerkers worden uitgeleverd",
+        "properties": {
+          "toegangspas_afnames": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Toegangspas"
+            }
+          },
+          "veldpermissies": {
+            "$ref": "#/components/schemas/ToegangspasPermissies"
+          }
+        }
+      },
+      "ToegangspasPermissies": {
+        "type": "object",
+        "description": "Object dat beschrijft voor welke velden van een Toegangspas afname van de leerling of medewerker de Koppelpartij recht heeft.",
+        "properties": {
+          "leerling_of_medewerker_uuid": {
+            "type": "boolean"
+          },
+          "pasnummer": {
+            "type": "boolean"
+          },
+          "borg": {
+            "type": "boolean"
+          },
+          "borg_betaald": {
+            "type": "boolean"
+          },
+          "van": {
+            "type": "boolean"
+          },
+          "tot": {
+            "type": "boolean"
+          },
+          "datum_pas_ingeleverd": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Toegangspas": {
+        "type": "object",
+        "description": "Object dat een Toegangspas afname van de leerling beschrijft.",
+        "properties": {
+          "leerling_of_medewerker_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pasnummer": {
+            "type": "string",
+            "example": "2B3389"
+          },
+          "borg": {
+            "type": "number",
+            "description": "Bedrag (getal met 2 decimalen achter de komma)",
+            "example": "15,68"
+          },
+          "borg_betaald": {
+            "type": "boolean"
+          },
+          "van": {
+            "type": "string",
+            "format": "date"
+          },
+          "tot": {
+            "type": "string",
+            "format": "date"
+          },
+          "datum_pas_ingeleverd": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
       "ExternalIdentifiers": {
         "type": "object",
         "properties": {
@@ -1240,6 +1480,18 @@
             "example": "Nederland"
           },
           "buitenlands_adres": {
+            "deprecated": true,
+            "type": "string"
+          },
+          "buitenlands_adres_regel_1": {
+            "type": "string",
+            "example": "9 Single Road"
+          },
+          "buitenlands_adres_regel_2": {
+            "type": "string",
+            "example": "Deventer"
+          },
+          "buitenlands_adres_regel_3": {
             "type": "string"
           }
         }
@@ -1507,6 +1759,11 @@
             "$ref": "#/components/schemas/Stamgroep",
             "description": "De Stamgroep waar de Leerling in geplaatst is gedurende de looptijd van deze Plaatsing."
           },
+          "bekostigingsvestigingscode": {
+            "type": "string",
+            "description": "De Vestigingscode (voorheen BRIN6) waaronder de leerling bij ROD ingeschreven staat.",
+            "example": "01AA23"
+          },
           "mentoren": {
             "type": "array",
             "items": {
@@ -1685,6 +1942,10 @@
             "description": "De roepnaam van de Medewerker. Er is voor de Medewerker geen apart veld voor de volledige voornamen.",
             "example": "Sheryll"
           },
+          "geboortenaam": {
+            "type": "string",
+            "description": "De geboortenaam van de Medewerker."
+          },
           "voorletters": {
             "type": "string",
             "description": "De voorletters van de voornamen van de Medewerker.",
@@ -1788,6 +2049,14 @@
           "reden_uit_dienst": {
             "type": "string"
           },
+          "is_onderwijzend_personeel": {
+            "type": "boolean",
+            "description": "Of de medewerker tot het onderwijzende personeel behoort."
+          },
+          "is_ondersteunend_personeel": {
+            "type": "boolean",
+            "description": "Of de medewerker tot het onderwijs ondersteunende personeel behoort."
+          },
           "privetelefoonnummer_geheim": {
             "type": "boolean",
             "description": "Of het privetelefoonnummer een geheim nummer is"
@@ -1853,7 +2122,7 @@
           "landelijke_vakcode": {
             "type": "string",
             "description": "Kan leeg zijn als de Lesgroep geen Vak heeft of als het Vak niet aan een Landelijk Vak gekoppeld is.",
-            "example": 191
+            "example": "0191"
           },
           "vakuuid": {
             "type": "string",
@@ -1869,7 +2138,7 @@
           },
           "leerjaar": {
             "type": "integer",
-            "description": "Het leerjaar van deze Lesgroep.\nLeerlingen in een Lesgroep kunnen vakken ook op een ander niveau volgen, wat inhoudt dat die Leerlingen een Plaatsing met een ander leerjaar hebben dan het leerjaar van de Lesgroep.\nClients kunnen de samenstelling van de Lesgroep wat leerjaren betreft onderzoeken door naar de Vakkeuzes te kijken.",
+            "description": "Het leerjaar van deze Lesgroep. Kan leeg zijn als de Lesgroep niet aan een leerjaar gekoppeld is.\nLeerlingen in een Lesgroep kunnen vakken ook op een ander niveau volgen, wat inhoudt dat die Leerlingen een Plaatsing met een ander leerjaar hebben dan het leerjaar van de Lesgroep.\nClients kunnen de samenstelling van de Lesgroep wat leerjaren betreft onderzoeken door naar de Vakkeuzes te kijken.",
             "example": 4
           },
           "schooljaar": {
@@ -1879,12 +2148,15 @@
           },
           "onderwijssoort": {
             "type": "string",
-            "description": "De naam van de landelijke onderwijssoort waar de Lesgroep voor bedoeld is.",
+            "description": "De naam van de landelijke onderwijssoort waar de Lesgroep voor bedoeld is. Kan leeg zijn als de Lesgroep niet aan een onderwijssoort gekoppeld is.",
             "example": "HAVO-TT"
           },
           "vestiging": {
             "$ref": "#/components/schemas/VestigingReferentie",
             "description": "De Vestiging waar de Lesgroep onder valt. Een Lesgroep heeft altijd maar één Vestiging."
+          },
+          "omschrijving": {
+            "type": "string"
           }
         }
       },
@@ -1899,6 +2171,14 @@
           "naam": {
             "type": "string",
             "example": "h4bBIO"
+          },
+          "begindatum": {
+            "type": "string",
+            "format": "date"
+          },
+          "einddatum": {
+            "type": "string",
+            "format": "date"
           },
           "vestiging": {
             "$ref": "#/components/schemas/VestigingReferentie"
@@ -1961,7 +2241,7 @@
           "landelijke_vakcode": {
             "type": "string",
             "description": "Als het Vak van de Vakkeuze gekoppeld is aan een landelijk voorgeschreven vak, is dit de vakcode van het landelijke vak.",
-            "example": 191
+            "example": "0191"
           },
           "landelijke_vaknaam": {
             "type": "string",
@@ -2105,6 +2385,14 @@
           },
           "vestiging": {
             "$ref": "#/components/schemas/VestigingReferentie"
+          },
+          "begindatum": {
+            "type": "string",
+            "format": "date"
+          },
+          "einddatum": {
+            "type": "string",
+            "format": "date"
           }
         }
       },
@@ -2362,7 +2650,7 @@
           },
           "gebruikersnaam": {
             "type": "string",
-            "description": "De gebruikersnaam van het account"
+            "description": "De gebruikersnaam van het account. Bij het aanmaken van een account is dit een verplicht veld."
           },
           "emailadres": {
             "type": "string",
@@ -2836,6 +3124,10 @@
               "kaal",
               "blond"
             ]
+          },
+          "maximalelengte": {
+            "type": "integer",
+            "description": "Voor een lange tekst is de maximale waarde 1024 en voor vrije tekst is de maximale waarde 100."
           }
         }
       },
@@ -2928,6 +3220,19 @@
               "bruin",
               "kaal",
               "blond"
+            ]
+          },
+          "maximalelengte": {
+            "type": "integer",
+            "description": "Voor een lange tekst is de maximale waarde 1024 en voor vrije tekst is de maximale waarde 100."
+          },
+          "rechten": {
+            "type": "string",
+            "description": "Geeft aan of het vrije veld gelezen of geschreven mag worden. Het recht voor schrijven zoals hier wordt aangegeven is alleen van toepassing op de leerling, medewerker en ouder/verzorger endpoints, voor de aanmelding en toestemming endpoints zijn deze niet van toepassing.",
+            "enum": [
+              "GEEN",
+              "LEZEN",
+              "LEZEN_EN_SCHRIJVEN"
             ]
           }
         }
@@ -3469,13 +3774,41 @@
         "properties": {
           "advies_school": {
             "type": "string",
-            "description": "Het advies gegeven aan de leerling door de school voor het vervolgonderwijs. Zie https://www.rijksoverheid.nl/onderwerpen/schooladvies-en-eindtoets-basisschool/vraag-en-antwoord/adviezen-in-groep-8 voor de lijst met mogelijke waardes.\n",
+            "description": "Het advies gegeven aan de leerling door de school voor het vervolgonderwijs. Zie /connect/vestiging/{vestigingUUID}/schooladviezen voor de lijst met mogelijke waardes.\n",
             "example": "vmbo gt-tl/havo"
           },
           "wens_ouders": {
             "type": "string",
-            "description": "De wens van de ouders voor het vervolgonderwijs. Zie https://www.rijksoverheid.nl/onderwerpen/schooladvies-en-eindtoets-basisschool/vraag-en-antwoord/adviezen-in-groep-8 voor de lijst met mogelijke waardes.\n",
+            "description": "De wens van de ouders voor het vervolgonderwijs. Zie /connect/vestiging/{vestigingUUID}/schooladviezen voor de lijst met mogelijke waardes.\n",
             "example": "havo"
+          }
+        }
+      },
+      "SchoolAdvies": {
+        "type": "object",
+        "description": "Mogelijke adviezen die van toepassing zijn voor deze instelling.",
+        "properties": {
+          "naam": {
+            "type": "string",
+            "description": "Waarde die aan een aanmelding meegegeven kan worden als advies_school of wens_ouders.\n",
+            "example": "havo"
+          },
+          "code": {
+            "type": "string",
+            "description": "DUO code zoals vastgelegd in https://duo.nl/zakelijk/primair-onderwijs/leerlingenadministratie/schooladvies-en-doorstroomtoets/schooladvies-registreren.jsp\n",
+            "example": 70
+          }
+        }
+      },
+      "SchoolAdviesResponse": {
+        "type": "object",
+        "description": "Response object voor schooladviezen",
+        "properties": {
+          "schooladviezen": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SchoolAdvies"
+            }
           }
         }
       },
@@ -3590,6 +3923,64 @@
           "datum"
         ]
       },
+      "SoortBijlage": {
+        "type": "object",
+        "description": "LVS Bijlagesoort.",
+        "properties": {
+          "soort": {
+            "type": "string",
+            "description": "De naam van de soort bijlage.\n",
+            "example": "Intake document"
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unieke identifier voor de soort bijlage",
+            "example": "49d5c371-ed45-4b7f-913d-e57e266b84af"
+          }
+        }
+      },
+      "SoortBijlageResponse": {
+        "type": "object",
+        "description": "Response object voor soorten bijlage",
+        "properties": {
+          "soorten": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SoortBijlage"
+            }
+          }
+        }
+      },
+      "LeerlingBijlage": {
+        "type": "object",
+        "description": "LVS Bijlage voor bij de leerling",
+        "properties": {
+          "naam": {
+            "type": "string",
+            "description": "Naam van het bijlage bestand. Maximaal 255 tekens."
+          },
+          "omschrijving": {
+            "type": "string",
+            "description": "Omschrijving voor de bijlage. Maximaal 100 tekens."
+          },
+          "inhoud": {
+            "type": "string",
+            "format": "byte",
+            "description": "base64-encoded string van de bestandsinhoud. Maximaal 10MB."
+          },
+          "soort": {
+            "type": "string",
+            "format": "UUID",
+            "description": "De soort bijlage"
+          }
+        },
+        "required": [
+          "naam",
+          "inhoud",
+          "soort"
+        ]
+      },
       "GeneralResponse": {
         "type": "object",
         "description": "Algemeen Response object voor wanneer we geen payload van een specifiek type hebben.",
@@ -3602,6 +3993,31 @@
             }
           }
         }
+      },
+      "PatchOperation": {
+        "type": "object",
+        "description": "Algemene Patch operatie op een property van een object (voor gebruik in een PATCH operatie). Patch operations moeten altijd volledig lower-case zijn. Zie https://jsonpatch.com/",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "add",
+              "replace",
+              "remove"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "value": {
+            "type": "object",
+            "description": "Dit zal vaak gewoon een string of number zijn, maar je kan hier ook gewoon JSON in stoppen. (Let wel op als je gegenereerde code gebruikt, dat je JSON parser dit goed oppakt.)"
+          }
+        },
+        "required": [
+          "op",
+          "path"
+        ]
       },
       "Error": {
         "type": "object",
@@ -3780,10 +4196,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De peilschooljaar parameter is bepalend voor welke Leerlingen er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal bij geen enkele waarde van de peilschooljaar parameter terugkomen.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nDe waarde van de peilschooljaar parameter is ook bepalend voor welke Plaatsingen, Lesgroepen en Vakkeuzes met de Leerling meegegeven worden omdat die begin- en einddatums hebben of voor een beperkte tijd aan de Leerling te relateren zijn.",
+            "description": "De peilschooljaar parameter is bepalend voor welke Leerlingen er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen leerling die vorig jaar voor het laatst een actieve plaatsing had zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VORIG krijgt.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nDe waarde van de peilschooljaar parameter is ook bepalend voor welke Plaatsingen, Lesgroepen en Vakkeuzes met de Leerling meegegeven worden omdat die begin- en einddatums hebben of voor een beperkte tijd aan de Leerling te relateren zijn.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -3896,7 +4313,7 @@
           {
             "name": "offset",
             "in": "query",
-            "description": "Voor pagination van op te halen Accounts. Default 0, verhoog voor verdere calls met amount",
+            "description": "Voor pagination van op te halen vrije veldwaardes. Default 0, verhoog voor verdere calls met amount. Dit telt op basis van het aantal Leerlingen, niet het aantal velden.",
             "schema": {
               "type": "integer"
             },
@@ -3905,7 +4322,7 @@
           {
             "name": "amount",
             "in": "query",
-            "description": "Voor pagination van op te halen Accounts. Maximaal 200.",
+            "description": "Voor pagination van op te halen vrije veldwaardes. Maximaal 200.",
             "schema": {
               "type": "integer",
               "maximum": 200
@@ -3915,10 +4332,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De peilschooljaar parameter is bepalend voor welke vrije veldwaardes er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal bij geen enkele waarde van de peilschooljaar parameter terugkomen.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nAls deze parameter niet gevuld wordt, wordt alleen naar de status op de huidige datum gekeken.",
+            "description": "De peilschooljaar parameter is bepalend voor welke vrije veldwaardes er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen leerling die vorig jaar voor het laatst een actieve plaatsing had zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VORIG krijgt.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nAls deze parameter niet gevuld wordt, wordt alleen naar de status op de huidige datum gekeken.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -3997,10 +4415,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De peilschooljaar parameter is bepalend voor welke Leerlingen er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal bij geen enkele waarde van de peilschooljaar parameter terugkomen.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nDe waarde van de peilschooljaar parameter is ook bepalend voor welke Plaatsingen, Lesgroepen en Vakkeuzes met de Leerling meegegeven worden omdat die begin- en einddatums hebben of voor een beperkte tijd aan de Leerling te relateren zijn.",
+            "description": "De peilschooljaar parameter is bepalend voor welke Leerlingen er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen leerling die vorig jaar voor het laatst een actieve plaatsing had zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VORIG krijgt.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nDe waarde van de peilschooljaar parameter is ook bepalend voor welke Plaatsingen, Lesgroepen en Vakkeuzes met de Leerling meegegeven worden omdat die begin- en einddatums hebben of voor een beperkte tijd aan de Leerling te relateren zijn.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -4093,10 +4512,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De peilschooljaar parameter is bepalend voor welke Plaatsingen er worden teruggegeven omdat gekeken wordt naar wanneer de Plaatsingen actueel zijn.\nEen Plaatsing heeft een begin- en einddatum, welke worden vergeleken met het meegegeven Peilschooljaar. Als er geen Peilschooljaar is, worden altijd alleen Plaatsingen teruggegeven die op het moment van de aanroep actueel waren (nu valt tussen begin- en einddatum). Als Peilschooljaar HUIDIG is worden alle Plaatsingen teruggegeven die ergens dit schooljaar geldig waren. Als Peilschooljaar VOLGEND is worden alle Plaatsingen terug gegeven die gedurende het volgende schooljaar geldig zullen zijn.",
+            "description": "De peilschooljaar parameter is bepalend voor welke Plaatsingen er worden teruggegeven omdat gekeken wordt naar wanneer de Plaatsingen actueel zijn.\nEen Plaatsing heeft een begin- en einddatum, welke worden vergeleken met het meegegeven Peilschooljaar. Als er geen Peilschooljaar is, worden altijd alleen Plaatsingen teruggegeven die op het moment van de aanroep actueel waren (nu valt tussen begin- en einddatum). Als Peilschooljaar HUIDIG is worden alle Plaatsingen teruggegeven die ergens dit schooljaar geldig waren. Als Peilschooljaar VOLGEND is worden alle Plaatsingen teruggegeven die gedurende het volgende schooljaar geldig zullen zijn, en als Peilschooljaar VORIG is worden alle Plaatsingen teruggegeven die geldig waren in het vorige  schooljaar.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -4188,10 +4608,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De peilschooljaar parameter is bepalend voor welke Plaatsingen er worden teruggegeven omdat gekeken wordt naar wanneer de Plaatsingen actueel zijn.\nEen Plaatsing heeft een begin- en einddatum, welke worden vergeleken met het meegegeven Peilschooljaar. Als er geen Peilschooljaar is, worden altijd alleen Plaatsingen teruggegeven die op het moment van de aanroep actueel waren (nu valt tussen begin- en einddatum). Als Peilschooljaar HUIDIG is worden alle Plaatsingen teruggegeven die ergens dit schooljaar geldig waren. Als Peilschooljaar VOLGEND is worden alle Plaatsingen terug gegeven die gedurende het volgende schooljaar geldig zullen zijn.",
+            "description": "De peilschooljaar parameter is bepalend voor welke Plaatsingen er worden teruggegeven omdat gekeken wordt naar wanneer de Plaatsingen actueel zijn.\nEen Plaatsing heeft een begin- en einddatum, welke worden vergeleken met het meegegeven Peilschooljaar. Als er geen Peilschooljaar is, worden altijd alleen Plaatsingen teruggegeven die op het moment van de aanroep actueel waren (nu valt tussen begin- en einddatum). Als Peilschooljaar HUIDIG is worden alle Plaatsingen teruggegeven die ergens dit schooljaar geldig waren. Als Peilschooljaar VOLGEND is worden alle Plaatsingen teruggegeven die gedurende het volgende schooljaar geldig zullen zijn, en als Peilschooljaar VORIG is worden alle Plaatsingen teruggegeven die geldig waren in het vorige  schooljaar.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -4546,6 +4967,189 @@
         ]
       }
     },
+    "/connect/vestiging/{vestigingUUID}/leerling/toegangspas": {
+      "get": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Geef de toegangspassen van alle leerlingen terug",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToegangspasResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToegangspasResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED - Geen toegang tot Vestiging of toegang verloopt voor begin van peilschooljaar."
+          },
+          "404": {
+            "description": "NOT FOUND"
+          }
+        },
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de Vestiging van de Toegangspas(sen).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "peilschooljaar",
+            "in": "query",
+            "description": "De peilschooljaar parameter is bepalend voor welke Toegangspassen er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen aan een pas gekoppeld zijn. Als geen schooljaar wordt opgegeven worden alleen Toegangspassen teruggegeven die nu lopen. Een pas waarvan de afname vorig jaar afliep kan alleen terug komen als de peilschooljaar parameter de waarde VORIG krijgt. Een pas die volgend jaar voor het eerst afgenomen wordt zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "VORIG",
+                "HUIDIG",
+                "VOLGEND"
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Voor pagination van op te halen Toegangspassen. Default 0, verhoog voor verdere calls met amount",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "name": "amount",
+            "in": "query",
+            "description": "Voor pagination van op te halen Toegangspassen. Maximaal 200.",
+            "schema": {
+              "type": "integer",
+              "maximum": 200
+            },
+            "required": true
+          },
+          {
+            "name": "veldpermissies",
+            "in": "query",
+            "description": "Geeft aan of de veldpermissies van de koppelpartij voor deze call moeten worden meegestuurd.",
+            "schema": {
+              "type": "boolean"
+            },
+            "required": false
+          }
+        ]
+      }
+    },
+    "/connect/vestiging/{vestigingUUID}/leerling/{leerlingUUID}/toegangspas": {
+      "get": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Geef de Toegangspas(sen) van een specifieke leerling terug",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToegangspasResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToegangspasResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED - Geen toegang tot Vestiging of toegang verloopt voor begin van peilschooljaar."
+          },
+          "404": {
+            "description": "NOT FOUND"
+          }
+        },
+        "parameters": [
+          {
+            "name": "leerlingUUID",
+            "in": "path",
+            "description": "UUID van de Leerling van de Toegangspas(sen).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de Vestiging van de Toegangspas(sen).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "peilschooljaar",
+            "in": "query",
+            "description": "De peilschooljaar parameter is bepalend voor welke Toegangspassen er worden teruggegeven omdat gekeken wordt naar wanneer de Leerling aan een pas gekoppeld is. Als geen schooljaar wordt opgegeven worden alleen Toegangspassen teruggegeven die nu lopen. Een pas waarvan de afname vorig jaar afliep kan alleen terug komen als de peilschooljaar parameter de waarde VORIG krijgt. Een pas die volgend jaar voor het eerst afgenomen wordt zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "VORIG",
+                "HUIDIG",
+                "VOLGEND"
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "veldpermissies",
+            "in": "query",
+            "description": "Geeft aan of de veldpermissies van de koppelpartij voor deze call moeten worden meegestuurd.",
+            "schema": {
+              "type": "boolean"
+            },
+            "required": false
+          }
+        ]
+      }
+    },
     "/connect/vestiging/{vestigingUUID}/leerling/{leerlingUUID}/rooster": {
       "get": {
         "security": [
@@ -4619,6 +5223,189 @@
             },
             "required": false,
             "description": "Optioneel weeknummer (default is de huidige week). Moet tussen 1 en 53 liggen en is de week van het kalenderjaar volgens ISO 8601."
+          },
+          {
+            "name": "veldpermissies",
+            "in": "query",
+            "description": "Geeft aan of de veldpermissies van de koppelpartij voor deze call moeten worden meegestuurd.",
+            "schema": {
+              "type": "boolean"
+            },
+            "required": false
+          }
+        ]
+      }
+    },
+    "/connect/vestiging/{vestigingUUID}/leerling/kluisafname": {
+      "get": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Geef de kluisafnames van alle leerlingen terug",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KluisafnameResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/KluisafnameResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED - Geen toegang tot Vestiging of toegang verloopt voor begin van peilschooljaar."
+          },
+          "404": {
+            "description": "NOT FOUND"
+          }
+        },
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de Vestiging van de Leerling van de Kluisafname(s).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "peilschooljaar",
+            "in": "query",
+            "description": "De peilschooljaar parameter is bepalend voor welke Kluisafnames er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben. Daarnaast hebben Kluisafnames een vanaf en tot datum waardoor alleen kluizen die binnen het gewenste schooljaar vallen worden teruggegeven. Als geen schooljaar wordt opgegeven worden alleen Kluisafnames teruggegeven die nu lopen van Leerlingen die nu een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal bij peilschooljaar VORIG terug komen.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "VORIG",
+                "HUIDIG",
+                "VOLGEND"
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Voor pagination van op te halen Kluisafnames. Default 0, verhoog voor verdere calls met amount",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "name": "amount",
+            "in": "query",
+            "description": "Voor pagination van op te halen Kluisafnames. Maximaal 200.",
+            "schema": {
+              "type": "integer",
+              "maximum": 200
+            },
+            "required": true
+          },
+          {
+            "name": "veldpermissies",
+            "in": "query",
+            "description": "Geeft aan of de veldpermissies van de koppelpartij voor deze call moeten worden meegestuurd.",
+            "schema": {
+              "type": "boolean"
+            },
+            "required": false
+          }
+        ]
+      }
+    },
+    "/connect/vestiging/{vestigingUUID}/leerling/{leerlingUUID}/kluisafname": {
+      "get": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Geef de kluisafname van een specifieke leerling terug",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KluisafnameResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/KluisafnameResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED - Geen toegang tot Vestiging of toegang verloopt voor begin van peilschooljaar."
+          },
+          "404": {
+            "description": "NOT FOUND"
+          }
+        },
+        "parameters": [
+          {
+            "name": "leerlingUUID",
+            "in": "path",
+            "description": "UUID van de Leerling van de Kluisafname(s).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de Vestiging van de Leerling van de Kluisafname(s).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "peilschooljaar",
+            "in": "query",
+            "description": "De peilschooljaar parameter is bepalend voor welke Kluisafnames er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben. Daarnaast hebben Kluisafnames een vanaf en tot datum waardoor alleen kluizen die binnen het gewenste schooljaar vallen worden teruggegeven. Als geen schooljaar wordt opgegeven worden alleen Kluisafnames teruggegeven die nu lopen van Leerlingen die nu een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal bij peilschooljaar VORIG terug komen.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "VORIG",
+                "HUIDIG",
+                "VOLGEND"
+              ]
+            },
+            "required": false
           },
           {
             "name": "veldpermissies",
@@ -4867,10 +5654,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De peilschooljaar parameter is bepalend voor welke vrije veldwaardes er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal bij geen enkele waarde van de peilschooljaar parameter terugkomen.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nAls deze parameter niet gevuld wordt, wordt alleen naar de status op de huidige datum gekeken.",
+            "description": "De peilschooljaar parameter is bepalend voor welke vrije veldwaardes er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen leerling die vorig jaar voor het laatst een actieve plaatsing had zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VORIG krijgt.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nAls deze parameter niet gevuld wordt, wordt alleen naar de status op de huidige datum gekeken.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -4903,6 +5691,91 @@
             "required": false
           }
         ]
+      }
+    },
+    "/connect/vestiging/{vestigingUUID}/leerling/{leerlingUUID}/veldwaardes/{vrijVeldUUID}": {
+      "post": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "summary": "Maak een nieuw vrije veld waarde aan bij leerling of update een bestaande.",
+        "description": "",
+        "operationId": "postLeerlingVrijVeld",
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de vestiging.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "leerlingUUID",
+            "in": "path",
+            "description": "UUID van de leerling",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "vrijVeldUUID",
+            "in": "path",
+            "description": "UUID van het vrije veld waarvoor de waarde moet worden aangemaakt of geupdate",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VeldWaarde"
+              }
+            }
+          },
+          "description": "De waarde voor het vrije veld bij de leerling om aan te maken of te updaten",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VeldWaarde"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
       }
     },
     "/connect/vestiging/{vestigingUUID}/leerling/account": {
@@ -4959,10 +5832,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De peilschooljaar parameter is bepalend voor welke accounts er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal bij geen enkele waarde van de peilschooljaar parameter terugkomen.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.",
+            "description": "De peilschooljaar parameter is bepalend voor welke accounts er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VORIG krijgt.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -5039,10 +5913,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De peilschooljaar parameter is bepalend voor welke leerlingen er accounts kunnen worden aangemaakt, omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal bij geen enkele waarde van de peilschooljaar parameter terugkomen, er wordt dus geen account voor aangemaakt.\nVoor een Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen een account worden aangemaakt wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.",
+            "description": "De peilschooljaar parameter is bepalend voor welke leerlingen er accounts kunnen worden aangemaakt, omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nVoor een Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen een account worden aangemaakt wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nOm een account te bewerken van een Leerling die in het vorige schooljaar een actief account had/heeft kan de peilschooljaar parameter VORIG gebruikt worden.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -5167,10 +6042,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De peilschooljaar parameter is bepalend voor het account van welke Leerlingen er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal bij geen enkele waarde van de peilschooljaar parameter terugkomen.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nDe waarde van de peilschooljaar parameter is ook bepalend voor welke Plaatsingen, Lesgroepen en Vakkeuzes met de Leerling meegegeven worden omdat die begin- en einddatums hebben of voor een beperkte tijd aan de Leerling te relateren zijn.",
+            "description": "De peilschooljaar parameter is bepalend voor het account van welke Leerlingen er worden teruggegeven omdat gekeken wordt naar wanneer de Leerlingen een actieve Plaatsing hebben.\nEen Leerling die vorig jaar van school gegaan is zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VORIG krijgt.\nEen Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nDe waarde van de peilschooljaar parameter is ook bepalend voor welke Plaatsingen, Lesgroepen en Vakkeuzes met de Leerling meegegeven worden omdat die begin- en einddatums hebben of voor een beperkte tijd aan de Leerling te relateren zijn.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -5248,10 +6124,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De peilschooljaar parameter bepaalt of er een account kan worden aangemaakt voor de leerling, omdat gekeken wordt naar wanneer de Leerling een actieve Plaatsing heeft.\nEen Leerling die vorig jaar van school gegaan is zal bij geen enkele waarde van de peilschooljaar parameter terugkomen, er wordt dus geen account voor aangemaakt.\nVoor een Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen een account worden aangemaakt wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.",
+            "description": "De peilschooljaar parameter bepaalt of er een account kan worden aangemaakt voor de leerling, omdat gekeken wordt naar wanneer de Leerling een actieve Plaatsing heeft.\nVoor een Leerling die volgend jaar voor het eerst een actieve Plaatsing heeft zal alleen een account worden aangemaakt wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.\nOm een account te bewerken van een Leerling die in het vorige schooljaar een actief account had/heeft kan de peilschooljaar parameter VORIG gebruikt worden.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -5315,6 +6192,110 @@
             "description": "UNAUTHORIZED - De koppelpartij heeft geen permissie om accounts aan te maken."
           }
         }
+      },
+      "patch": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Wijzig het Account van de Leerling. Gebruikt een beperkte implementatie van JSON Patch, zie https://jsonpatch.com/\nPatch operations moeten altijd volledig lower-case zijn, paths moeten qua capitalization ook precies overeenkomen met wat hier gedocumenteerd staat.\nAlleen operaties op de paths '/emailadres' en '/remoteidentifier' zijn ondersteund.\nHet path '/remoteidentifier' verwijst naar de enige remote identifier die in het GET endpoint wordt teruggegeven. (Dit is er altijd hoogstens één)\nAlleen de operaties 'add', 'replace' en 'remove' worden ondersteund.\nEen 'remove' operatie zal nooit een error opleveren, ook als er geen waarde was.\nGebruik bij een 'add' of 'replace' op '/remoteidentifier' altijd een JSON object met dezelfde structuur als de remoteidentifier in een PUT request.",
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de vestiging van de leerling",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "leerlingUUID",
+            "in": "path",
+            "description": "UUID van de Leerling",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PatchOperation"
+                }
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PatchOperation"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK - Het account is gewijzigd.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD REQUEST - Het account is ongewijzigd omdat er fouten in het request voorkwamen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeneralResponse"
+                  }
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeneralResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED - De koppelpartij heeft geen permissie om accounts te wijzigen."
+          },
+          "404": {
+            "description": "NOT FOUND - De Leerling bestaat niet of heeft geen account."
+          }
+        }
       }
     },
     "/connect/vestiging/{vestigingUUID}/medewerker": {
@@ -5362,6 +6343,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -5579,6 +6561,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -5615,6 +6598,91 @@
             "required": false
           }
         ]
+      }
+    },
+    "/connect/vestiging/{vestigingUUID}/medewerker/{medewerkerUUID}/veldwaardes/{vrijVeldUUID}": {
+      "post": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "summary": "Maak een nieuw vrije veld waarde aan bij medewerker of update een bestaande.",
+        "description": "",
+        "operationId": "postMedewerkerVrijVeld",
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de vestiging.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "medewerkerUUID",
+            "in": "path",
+            "description": "UUID van de medewerker",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "vrijVeldUUID",
+            "in": "path",
+            "description": "UUID van het vrije veld waarvoor de waarde moet worden aangemaakt of geupdate",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VeldWaarde"
+              }
+            }
+          },
+          "description": "De waarde voor het vrije veld bij de medewerker om aan te maken of te updaten",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VeldWaarde"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
       }
     },
     "/connect/vestiging/{vestigingUUID}/medewerker/{medewerkerUUID}/pasfoto": {
@@ -5771,6 +6839,189 @@
         ]
       }
     },
+    "/connect/vestiging/{vestigingUUID}/medewerker/toegangspas": {
+      "get": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Geef de toegangspassen van alle medewerkers terug",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToegangspasResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToegangspasResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED - Geen toegang tot Vestiging of toegang verloopt voor begin van peilschooljaar."
+          },
+          "404": {
+            "description": "NOT FOUND"
+          }
+        },
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de Vestiging van de Toegangspas(sen).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "peilschooljaar",
+            "in": "query",
+            "description": "De peilschooljaar parameter is bepalend voor welke Toegangspassen er worden teruggegeven omdat gekeken wordt naar wanneer de Medewerkers aan een pas gekoppeld zijn. Als geen schooljaar wordt opgegeven worden alleen Toegangspassen teruggegeven die nu lopen. Een pas waarvan de afname vorig jaar afliep kan alleen terug komen als de peilschooljaar parameter de waarde VORIG krijgt. Een pas die volgend jaar voor het eerst afgenomen wordt zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "VORIG",
+                "HUIDIG",
+                "VOLGEND"
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Voor pagination van op te halen Toegangspassen. Default 0, verhoog voor verdere calls met amount",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "name": "amount",
+            "in": "query",
+            "description": "Voor pagination van op te halen Toegangspassen. Maximaal 200.",
+            "schema": {
+              "type": "integer",
+              "maximum": 200
+            },
+            "required": true
+          },
+          {
+            "name": "veldpermissies",
+            "in": "query",
+            "description": "Geeft aan of de veldpermissies van de koppelpartij voor deze call moeten worden meegestuurd.",
+            "schema": {
+              "type": "boolean"
+            },
+            "required": false
+          }
+        ]
+      }
+    },
+    "/connect/vestiging/{vestigingUUID}/medewerker/{medewerkerUUID}/toegangspas": {
+      "get": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Geef de Toegangspas(sen) van een specifieke medewerker terug",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToegangspasResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToegangspasResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED - Geen toegang tot Vestiging of toegang verloopt voor begin van peilschooljaar."
+          },
+          "404": {
+            "description": "NOT FOUND"
+          }
+        },
+        "parameters": [
+          {
+            "name": "medewerkerUUID",
+            "in": "path",
+            "description": "UUID van de Medewerker van de Toegangspas(sen).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de Vestiging van de Toegangspas(sen).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "peilschooljaar",
+            "in": "query",
+            "description": "De peilschooljaar parameter is bepalend voor welke Toegangspassen er worden teruggegeven omdat gekeken wordt naar wanneer de Medewerker aan een pas gekoppeld is. Als geen schooljaar wordt opgegeven worden alleen Toegangspassen teruggegeven die nu lopen. Een pas waarvan de afname vorig jaar afliep kan alleen terug komen als de peilschooljaar parameter de waarde VORIG krijgt. Een pas die volgend jaar voor het eerst afgenomen wordt zal alleen terugkomen wanneer de peilschooljaar parameter de waarde VOLGEND krijgt.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "VORIG",
+                "HUIDIG",
+                "VOLGEND"
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "veldpermissies",
+            "in": "query",
+            "description": "Geeft aan of de veldpermissies van de koppelpartij voor deze call moeten worden meegestuurd.",
+            "schema": {
+              "type": "boolean"
+            },
+            "required": false
+          }
+        ]
+      }
+    },
     "/connect/vestiging/{vestigingUUID}/medewerker/account": {
       "get": {
         "security": [
@@ -5859,6 +7110,20 @@
               "type": "boolean"
             },
             "required": false
+          },
+          {
+            "name": "peilschooljaar",
+            "in": "query",
+            "description": "Het schooljaar waarbinnen de medewerker in dienst is.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "VORIG",
+                "HUIDIG",
+                "VOLGEND"
+              ]
+            },
+            "required": false
           }
         ]
       },
@@ -5888,6 +7153,20 @@
               "format": "uuid"
             },
             "required": true
+          },
+          {
+            "name": "peilschooljaar",
+            "in": "query",
+            "description": "Het schooljaar waarbinnen de medewerker in dienst is.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "VORIG",
+                "HUIDIG",
+                "VOLGEND"
+              ]
+            },
+            "required": false
           }
         ],
         "requestBody": {
@@ -6029,6 +7308,20 @@
               "type": "boolean"
             },
             "required": false
+          },
+          {
+            "name": "peilschooljaar",
+            "in": "query",
+            "description": "Het schooljaar waarbinnen de medewerker in dienst is.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "VORIG",
+                "HUIDIG",
+                "VOLGEND"
+              ]
+            },
+            "required": false
           }
         ]
       },
@@ -6068,6 +7361,20 @@
               "format": "uuid"
             },
             "required": true
+          },
+          {
+            "name": "peilschooljaar",
+            "in": "query",
+            "description": "Het schooljaar waarbinnen de medewerker in dienst is.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "VORIG",
+                "HUIDIG",
+                "VOLGEND"
+              ]
+            },
+            "required": false
           }
         ],
         "requestBody": {
@@ -6126,6 +7433,210 @@
             "description": "UNAUTHORIZED - De koppelpartij heeft geen permissie om accounts aan te maken."
           }
         }
+      },
+      "patch": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Wijzig het Account van de Medewerker. Gebruikt een beperkte implementatie van JSON Patch, zie https://jsonpatch.com/\nPatch operations moeten altijd volledig lower-case zijn, paths moeten qua capitalization ook precies overeenkomen met wat hier gedocumenteerd staat.\nAlleen operaties op de paths '/emailadres' en '/remoteidentifier' zijn ondersteund.\nHet path '/remoteidentifier' verwijst naar de enige remote identifier die in het GET endpoint wordt teruggegeven. (Dit is er altijd hoogstens één)\nAlleen de operaties 'add', 'replace' en 'remove' worden ondersteund.\nEen 'remove' operatie zal nooit een error opleveren, ook als er geen waarde was.\nGebruik bij een 'add' of 'replace' op '/remoteidentifier' altijd een JSON object met dezelfde structuur als de remoteidentifier in een PUT request.",
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de vestiging van de medewerker",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "medewerkerUUID",
+            "in": "path",
+            "description": "UUID van de Medewerker",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PatchOperation"
+                }
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PatchOperation"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK - Het account is gewijzigd.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD REQUEST - Het account is ongewijzigd omdat er fouten in het request voorkwamen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InvalidAccountInput"
+                  }
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InvalidAccountInput"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED - De koppelpartij heeft geen permissie om accounts te wijzigen."
+          },
+          "404": {
+            "description": "NOT FOUND - De Medewerker bestaat niet of heeft geen account."
+          }
+        }
+      }
+    },
+    "/connect/vestiging/{vestigingUUID}/medewerker/{medewerkerUUID}/agenda": {
+      "get": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Geeft de agenda van de medewerker terug",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agenda"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD REQUEST - ongeldig weeknummer."
+          },
+          "401": {
+            "description": "UNAUTHORIZED - Geen geldig token."
+          },
+          "403": {
+            "description": "FORBIDDEN - Geen recht om medewerker of het rooster op te halen."
+          },
+          "404": {
+            "description": "NOT FOUND - Onjuist medewerkerUUID of vestigingUUID of geen recht op deze Medewerker."
+          }
+        },
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "medewerkerUUID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "weeknummer",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Optioneel weeknummer. Moet tussen 1 en 53 liggen en is de week van het kalenderjaar volgens ISO 8601."
+          },
+          {
+            "name": "hele_schooljaar",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "required": false,
+            "description": "Geeft aan of afspraken voor het hele schooljaar (gepagineerd) worden opgehaald bij afwezigheid van weeknummer. Wanneer deze waarde false is en er geen weeknummer is opgegeven worden afspraken voor de huidige week geleverd."
+          },
+          {
+            "name": "amount",
+            "in": "query",
+            "description": "Voor pagination van op te halen afspraken wanneer hele_schooljaar true is en weeknummer ontbreekt. Maximaal 200.",
+            "schema": {
+              "type": "integer",
+              "maximum": 200
+            },
+            "required": false
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Voor pagination van op te halen afspraken wanneer hele_schooljaar true is en weeknummer ontbreekt. Default 0, verhoog voor verdere calls met amount",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false
+          }
+        ]
       }
     },
     "/connect/vestiging/{vestigingUUID}/vak": {
@@ -6512,10 +8023,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De werking van de peilschooljaar parameter is in het geval van Lesgroepen een beetje bijzonder omdat Lesgroepen zelf altijd al aan een specifiek schooljaar gekoppeld zijn.\nDaardoor verschilt de response nooit qua welke Lesgroepen er worden teruggegeven wanneer je de parameter weglaat of kiest voor HUIDIG, maar bijvoorbeeld de Leerlingen in de Lesgroep kunnen verschillen wanneer verwacht wordt dat er gedurende de rest van het schooljaar Leerlingen overstappen.\nNatuurlijk zijn Lesgroepen voor het volgende schooljaar onzichtbaar voor de client totdat de client als peilschooljaar parameter VOLGEND meegeeft.",
+            "description": "De werking van de peilschooljaar parameter is in het geval van Lesgroepen een beetje bijzonder omdat Lesgroepen zelf altijd al aan een specifiek schooljaar gekoppeld zijn.\nDaardoor verschilt de response nooit qua welke Lesgroepen er worden teruggegeven wanneer je de parameter weglaat of kiest voor HUIDIG, maar bijvoorbeeld de Leerlingen in de Lesgroep kunnen verschillen wanneer verwacht wordt dat er gedurende de rest van het schooljaar Leerlingen overstappen.\nNatuurlijk zijn Lesgroepen voor het volgende of vorige schooljaar onzichtbaar voor de client totdat de client als peilschooljaar parameter VOLGEND of VORIG meegeeft.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -6616,10 +8128,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De werking van de peilschooljaar parameter is in het geval van Lesgroepen een beetje bijzonder omdat Lesgroepen zelf altijd al aan een specifiek schooljaar gekoppeld zijn.\nDaardoor verschilt de response nooit qua welke Lesgroepen er worden teruggegeven wanneer je de parameter weglaat of kiest voor HUIDIG, maar bijvoorbeeld de Leerlingen in de Lesgroep kunnen verschillen wanneer verwacht wordt dat er gedurende de rest van het schooljaar Leerlingen overstappen.\nNatuurlijk zijn Lesgroepen voor het volgende schooljaar onzichtbaar voor de client totdat de client als peilschooljaar parameter VOLGEND meegeeft.",
+            "description": "De werking van de peilschooljaar parameter is in het geval van Lesgroepen een beetje bijzonder omdat Lesgroepen zelf altijd al aan een specifiek schooljaar gekoppeld zijn.\nDaardoor verschilt de response nooit qua welke Lesgroepen er worden teruggegeven wanneer je de parameter weglaat of kiest voor HUIDIG, maar bijvoorbeeld de Leerlingen in de Lesgroep kunnen verschillen wanneer verwacht wordt dat er gedurende de rest van het schooljaar Leerlingen overstappen.\nNatuurlijk zijn Lesgroepen voor het volgende of vorige schooljaar onzichtbaar voor de client totdat de client als peilschooljaar parameter VOLGEND of VORIG meegeeft.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -6802,6 +8315,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -6897,6 +8411,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -6979,10 +8494,11 @@
           {
             "name": "peilschooljaar",
             "in": "query",
-            "description": "De werking van de peilschooljaar parameter is in het geval van Lesgroepen een beetje bijzonder omdat Lesgroepen zelf altijd al aan een specifiek schooljaar gekoppeld zijn.\nDaardoor verschilt de response nooit qua welke Lesgroepen er worden teruggegeven wanneer je de parameter weglaat of kiest voor HUIDIG, maar bijvoorbeeld de Leerlingen in de Lesgroep kunnen verschillen wanneer verwacht wordt dat er gedurende de rest van het schooljaar Leerlingen overstappen.\nNatuurlijk zijn Lesgroepen voor het volgende schooljaar onzichtbaar voor de client totdat de client als peilschooljaar parameter VOLGEND meegeeft.",
+            "description": "De werking van de peilschooljaar parameter is in het geval van Lesgroepen een beetje bijzonder omdat Lesgroepen zelf altijd al aan een specifiek schooljaar gekoppeld zijn.\nDaardoor verschilt de response nooit qua welke Lesgroepen er worden teruggegeven wanneer je de parameter weglaat of kiest voor HUIDIG, maar bijvoorbeeld de Leerlingen in de Lesgroep kunnen verschillen wanneer verwacht wordt dat er gedurende de rest van het schooljaar Leerlingen overstappen.\nNatuurlijk zijn Lesgroepen voor het volgende of vorige schooljaar onzichtbaar voor de client totdat de client als peilschooljaar parameter VOLGEND of VORIG meegeeft.",
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -7070,6 +8586,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -7274,6 +8791,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -7402,6 +8920,91 @@
         ]
       }
     },
+    "/connect/vestiging/{vestigingUUID}/ouderVerzorger/{ouderVerzorgerUUID}/veldwaardes/{vrijVeldUUID}": {
+      "post": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "summary": "Maak een nieuw vrije veld waarde aan bij ouder/verzorger of update een bestaande.",
+        "description": "",
+        "operationId": "postOuderVerzorgerVrijVeld",
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de vestiging.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "ouderVerzorgerUUID",
+            "in": "path",
+            "description": "UUID van de ouder/verzorger",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "vrijVeldUUID",
+            "in": "path",
+            "description": "UUID van het vrije veld waarvoor de waarde moet worden aangemaakt of geupdate",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VeldWaarde"
+              }
+            }
+          },
+          "description": "De waarde voor het vrije veld bij de ouder/verzorger om aan te maken of te updaten",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VeldWaarde"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/connect/vestiging/{vestigingUUID}/ouderVerzorger/account": {
       "get": {
         "security": [
@@ -7460,6 +9063,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -7540,6 +9144,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -7668,6 +9273,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -7749,6 +9355,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "VORIG",
                 "HUIDIG",
                 "VOLGEND"
               ]
@@ -7810,6 +9417,110 @@
           },
           "401": {
             "description": "UNAUTHORIZED - De koppelpartij heeft geen permissie om accounts aan te maken."
+          }
+        }
+      },
+      "patch": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Wijzig het Account van de Ouder/Verzorger. Gebruikt een beperkte implementatie van JSON Patch, zie https://jsonpatch.com/\nPatch operations moeten altijd volledig lower-case zijn, paths moeten qua capitalization ook precies overeenkomen met wat hier gedocumenteerd staat.\nAlleen operaties op de paths '/emailadres' en '/remoteidentifier' zijn ondersteund.\nHet path '/remoteidentifier' verwijst naar de enige remote identifier die in het GET endpoint wordt teruggegeven. (Dit is er altijd hoogstens één)\nAlleen de operaties 'add', 'replace' en 'remove' worden ondersteund.\nEen 'remove' operatie zal nooit een error opleveren, ook als er geen waarde was.\nGebruik bij een 'add' of 'replace' op '/remoteidentifier' altijd een JSON object met dezelfde structuur als de remoteidentifier in een PUT request.",
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de vestiging van de Ouder/Verzorger",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "ouderVerzorgerUUID",
+            "in": "path",
+            "description": "UUID van de Ouder/Verzorger",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PatchOperation"
+                }
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PatchOperation"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK - Het account is gewijzigd.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD REQUEST - Het account is ongewijzigd omdat er fouten in het request voorkwamen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InvalidAccountInput"
+                  }
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InvalidAccountInput"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED - De koppelpartij heeft geen permissie om accounts te wijzigen."
+          },
+          "404": {
+            "description": "NOT FOUND - De Ouder/Verzorger bestaat niet of heeft geen account."
           }
         }
       }
@@ -8616,6 +10327,57 @@
         ]
       }
     },
+    "/connect/vestiging/{vestigingUUID}/schooladviezen": {
+      "get": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Endpoint voor het ophalen van alle schooladviezen die in een aanmelding meegegeven kunnen worden als advies_school of wens_ouders.",
+        "responses": {
+          "200": {
+            "description": "Aanroep geslaagd, zie response body voor schooladvies objecten.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchoolAdviesResponse"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchoolAdviesResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN - Geen recht om schooladviezen op te halen."
+          }
+        },
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de vestiging waar de velden betrekking op hebben.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
     "/connect/vestiging/{vestigingUUID}/aanmelding/{aanmeldingUUID}/bijlage": {
       "post": {
         "security": [
@@ -8851,6 +10613,114 @@
           },
           "401": {
             "description": "UNAUTHORIZED - Client heeft geen toegang tot het Connect Koppelvlak."
+          }
+        }
+      }
+    },
+    "/connect/vestiging/{vestigingUUID}/bijlagen/soorten": {
+      "get": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Endpoint voor het ophalen van soorten bijlagen.",
+        "responses": {
+          "200": {
+            "description": "Aanroep geslaagd, zie response body voor soortbijlage objecten.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoortBijlageResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN - Geen recht om soort bijlagen op te halen."
+          }
+        },
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de vestiging waar de soortbijlagen betrekking op hebben.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/connect/vestiging/{vestigingUUID}/leerling/{leerlingUUID}/bijlage": {
+      "post": {
+        "security": [
+          {
+            "somtoday-authenticator-nightly": []
+          },
+          {
+            "somtoday-authenticator-acceptatie": []
+          },
+          {
+            "somtoday-authenticator-test": []
+          },
+          {
+            "somtoday-authenticator-productie": []
+          }
+        ],
+        "description": "Versturen van een nieuwe LVS bijlage voor een leerling",
+        "parameters": [
+          {
+            "name": "vestigingUUID",
+            "in": "path",
+            "description": "UUID van de Vestiging waar de leerling op zit.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "name": "leerlingUUID",
+            "in": "path",
+            "description": "UUID van de leerling waar de LVS bijlage aan gekoppeld moet worden.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeerlingBijlage"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "NO CONTENT - Bijlage opgeslagen bij de leerling"
+          },
+          "400": {
+            "description": "BAD REQUEST - Fout in het meegestuurde Bijlage object."
+          },
+          "403": {
+            "description": "FORBIDDEN - Geen recht om een LVS  bijlage bij een leerling te schrijven."
           }
         }
       }
