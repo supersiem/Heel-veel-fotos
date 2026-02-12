@@ -1,0 +1,6 @@
+
+[[language]]
+name = "go"
+auto-format = true
+formatter = { command = "goimports" }
+
